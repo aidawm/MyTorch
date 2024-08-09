@@ -3,6 +3,8 @@ from mytorch import Tensor
 from mytorch.layer import Layer, Conv2d, Linear
 
 "This class is an abstraction for your model."
+
+
 class Model:
     def __init__(self) -> None:
         pass
@@ -11,6 +13,7 @@ class Model:
         return self.forward(inp)
 
     "Override this method when defining your own model."
+
     def forward(self, x: Tensor) -> Tensor:
         print("forward method not implemented.")
         return None

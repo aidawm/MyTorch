@@ -6,4 +6,4 @@ def sigmoid(x: Tensor) -> Tensor:
     TODO: implement sigmoid function
     hint: you can do it using function you've implemented (not directly define grad func)
     """
-    return ...
+    return 1 / (1 + (-x).exp())

@@ -1,13 +1,17 @@
 "this code is inspired by https://github.com/amirrezarajabi/rs-dl-framework/blob/main/rsdl/tensors.py"
 
-import numpy as np
 from typing import List, NamedTuple, Callable, Optional, Union
+
+import numpy as np
+
 
 class Dependency(NamedTuple):
     tensor: 'Tensor'
     grad_fn: Callable[[np.ndarray], np.ndarray]
 
+
 Arrayable = Union[float, list, np.ndarray]
+
 
 def ensure_array(arrayable: Arrayable) -> np.ndarray:
     if isinstance(arrayable, np.ndarray):
@@ -15,13 +19,16 @@ def ensure_array(arrayable: Arrayable) -> np.ndarray:
     else:
         return np.array(arrayable)
 
+
 Tensorable = Union[float, 'Tensor', np.ndarray]
+
 
 def ensure_tensor(tensorable: Tensorable) -> 'Tensor':
     if isinstance(tensorable, Tensor):
         return tensorable
     else:
         return Tensor(tensorable)
+
 
 class Tensor:
 
@@ -68,6 +75,21 @@ class Tensor:
 
     def sum(self) -> 'Tensor':
         return _tensor_sum(self)
+
+    def sum_in_batch(self):
+        data = np.sum(self.data, axis=(1, 2))
+        req_grad = self.requires_grad
+
+        if req_grad:
+            def grad_fn(grad: np.ndarray):
+                return grad * np.ones_like(self.data)
+
+            depends_on = [Dependency(self, grad_fn)]
+
+        else:
+            depends_on = []
+
+        return Tensor(data=data, requires_grad=req_grad, depends_on=depends_on)
 
     def log(self, base=10) -> 'Tensor':
         return _tensor_log(self, base)
@@ -123,13 +145,13 @@ class Tensor:
     def __getitem__(self, idcs) -> 'Tensor':
         # idcs indicates [:], used to get slice of items
         return _tensor_slice(self, idcs)
-    
+
     def __setitem__(self, idcs, other):
         "TODO: handle tensor item assignment."
-        other = ensure_tensor(other)
-        if self.requires_grad or other.requires_grad:
-            raise ValueError("In-place operations (like item assignment) are not allowed for tensors that require gradients")
-        self.data[idcs] = other.data
+        if self.requires_grad:
+            self.grad[idcs] = 0
+        self._data[idcs] = other
+        pass
 
     def __neg__(self) -> 'Tensor':
         return _tensor_neg(self)
@@ -145,12 +167,14 @@ class Tensor:
             backward_grad = dependency.grad_fn(grad.data)
             dependency.tensor.backward(Tensor(backward_grad))
 
+
 """
 TODO: handle tensor calculations through these methods.
 hint: do not change t.data but create a new Tensor if required. 
 grad_fn handles required gradient calculation for current operation.
 you can check _tensor_sum(), _add() and _mul() as reference.
 """
+
 
 def _tensor_sum(t: Tensor) -> Tensor:
     data = t.data.sum()
@@ -167,15 +191,15 @@ def _tensor_sum(t: Tensor) -> Tensor:
 
     return Tensor(data=data, requires_grad=req_grad, depends_on=depends_on)
 
-def _tensor_log(t: Tensor) -> Tensor:
+
+def _tensor_log(t: Tensor, base=10) -> Tensor:
     "TODO: tensor log"
-    data = np.log(t.data)
+    data = np.log(t.data) / np.log(base)
     req_grad = t.requires_grad
 
     if req_grad:
         def grad_fn(grad: np.ndarray):
-            # derivative of the log(x) = 1/x
-            return grad/ t.data
+            return grad * 1 / (t.data * np.log(base))
 
         depends_on = [Dependency(t, grad_fn)]
 
@@ -183,6 +207,7 @@ def _tensor_log(t: Tensor) -> Tensor:
         depends_on = []
 
     return Tensor(data=data, requires_grad=req_grad, depends_on=depends_on)
+
 
 def _tensor_exp(t: Tensor) -> Tensor:
     "TODO: tensor exp"
@@ -191,8 +216,7 @@ def _tensor_exp(t: Tensor) -> Tensor:
 
     if req_grad:
         def grad_fn(grad: np.ndarray):
-            # derivative of the exp(x) = exp(x)
-            return grad*data
+            return grad * np.exp(t.data)
 
         depends_on = [Dependency(t, grad_fn)]
 
@@ -201,14 +225,15 @@ def _tensor_exp(t: Tensor) -> Tensor:
 
     return Tensor(data=data, requires_grad=req_grad, depends_on=depends_on)
 
+
 def _tensor_pow(t: Tensor, power: float) -> Tensor:
     "TODO: tensor power"
-    data = np.power(t.data,power)
+    data = np.power(t.data, power)
     req_grad = t.requires_grad
 
     if req_grad:
         def grad_fn(grad: np.ndarray):
-            return grad * power * np.power(t.data , power -1)
+            return grad * np.power(t.data, power - 1) * power
 
         depends_on = [Dependency(t, grad_fn)]
 
@@ -216,6 +241,7 @@ def _tensor_pow(t: Tensor, power: float) -> Tensor:
         depends_on = []
 
     return Tensor(data=data, requires_grad=req_grad, depends_on=depends_on)
+
 
 def _tensor_slice(t: Tensor, idcs) -> Tensor:
     "TODO: tensor slice"
@@ -234,9 +260,10 @@ def _tensor_slice(t: Tensor, idcs) -> Tensor:
 
     return Tensor(data, requires_grad, depends_on)
 
+
 def _tensor_neg(t: Tensor) -> Tensor:
     "TODO: tensor negative"
-    data = - t.data
+    data = -1 * t.data
     requires_grad = t.requires_grad
     if requires_grad:
         depends_on = [Dependency(t, lambda x: -x)]
@@ -244,6 +271,7 @@ def _tensor_neg(t: Tensor) -> Tensor:
         depends_on = []
 
     return Tensor(data, requires_grad, depends_on)
+
 
 def _add(t1: Tensor, t2: Tensor) -> Tensor:
     data = t1.data + t2.data
@@ -284,7 +312,8 @@ def _add(t1: Tensor, t2: Tensor) -> Tensor:
 def _sub(t1: Tensor, t2: Tensor) -> Tensor:
     "TODO: implement sub"
     # Hint: a-b = a+(-b)
-    return _add(t1,_tensor_neg(t2))
+    return _add(t1, _tensor_neg(t2))
+
 
 def _mul(t1: Tensor, t2: Tensor) -> Tensor:
     # Done ( Don't change )
@@ -322,6 +351,7 @@ def _mul(t1: Tensor, t2: Tensor) -> Tensor:
         requires_grad=req_grad,
         depends_on=depends_on
     )
+
 
 def _matmul(t1: Tensor, t2: Tensor) -> Tensor:
     "TODO: implement matrix multiplication"
